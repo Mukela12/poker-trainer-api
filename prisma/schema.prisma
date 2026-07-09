@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// A player-facing training user. Kept minimal for the trial.
+model User {
+  id        String    @id @default(cuid())
+  handle    String    @unique
+  createdAt DateTime  @default(now())
+  attempts  Attempt[]
+}
+
+// A decision "spot": a preflop scenario the trainer quizzes on,
+// e.g. "RFI from the Cutoff" (hero position + scenario).
+model Spot {
+  id           String       @id @default(cuid())
+  key          String       @unique // stable slug, e.g. "rfi-co"
+  name         String                 // "RFI — Cutoff"
+  heroPosition String                 // UTG | MP | CO | BTN | SB | BB
+  scenario     String                 // "RFI" (raise-first-in), extensible to "vs-3bet" etc.
+  description  String       @default("")
+  // Actions a player may choose in this spot, in display order.
+  actions      String[]     @default(["raise", "fold"])
+  entries      RangeEntry[]
+  attempts     Attempt[]
+
+  @@index([scenario])
+}
+
+// The correct answer for one hand within a spot's range chart.
+// One row per hand in the 13x13 grid (169 combos per spot).
+model RangeEntry {
+  id        String @id @default(cuid())
+  spot      Spot   @relation(fields: [spotId], references: [id], onDelete: Cascade)
+  spotId    String
+  hand      String // canonical notation: "AA", "AKs", "AKo", "72o", ...
+  action    String // the GTO-correct action for this hand in this spot
+  frequency Float  @default(1) // fraction of the time this action is taken (mixed strategies)
+
+  @@unique([spotId, hand])
+  @@index([spotId])
+}
+
+// A single quiz answer by a user, for progress + mistake tracking.
+model Attempt {
+  id            String   @id @default(cuid())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  spot          Spot     @relation(fields: [spotId], references: [id], onDelete: Cascade)
+  spotId        String
+  hand          String
+  chosenAction  String
+  correctAction String
+  isCorrect     Boolean
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, spotId])
+}
